@@ -9,5 +9,6 @@ type Msg =
     | PausePlayback
     | StopPlayback
     | ConnectSocket
-    | MediaSetEvent of Sockets.ClientMessage
+    | RemoteEvent of Sockets.ClientMessage
+    | RemoveCountdown of string
     | Delayed of Msg * delay:int

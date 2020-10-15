@@ -3,11 +3,15 @@ module View
 open Feliz
 open Feliz.Bulma
 
+open System
 open Shared
 open Model
 open Messages
 
 let [<Literal>] TimeFormatString = "HH:mm:ss"
+
+let getShortId (mediaSetId : string) =
+    mediaSetId.ToUpper().Split('~') |> Seq.last
 
 let view (state : Model) dispatch =
 
@@ -101,19 +105,25 @@ let view (state : Model) dispatch =
             ]
         ]
 
-    let showEvent e =
+    let showEvent (e : RemoteEvent) =
 
-        let getId (mediaSetId : string) =
-            mediaSetId.Split('~') |> Seq.last
-
-        let mediaSetId,state,provider,quality,timestamp =
-            match e with
-            | Dto.RemoteFileUpdate e -> getId e.MediaSetId, e.RemoteState.State,e.StorageProvider,e.FileRef.QualityId.ToString(),e.RemoteState.Timestamp
-            | Dto.RemoteSubtitlesUpdate e -> getId e.MediaSetId, e.RemoteState.State,e.StorageProvider,"TEXT",e.RemoteState.Timestamp
-            | _ -> failwithf "Unsupported event type %A" e
+        let getResourceRef (e : RemoteEvent) =
+            let partSegment =
+                ResourceRef.getPartId e.ResourceRef
+                |> Option.map (fun partId ->
+                    match state.RecentMediaSets |> Map.tryFind e.MediaSetId with
+                    | Some mediaSet -> 
+                        match mediaSet.PartNumbers |> Map.tryFind partId with
+                        | Some partNumber -> sprintf "%d-" partNumber
+                        | None -> ""
+                    | None -> "")
+                |> Option.defaultValue ""
+            match e.ResourceRef with
+            | Dto.FileRef fileRef -> sprintf "%s%d" partSegment fileRef.QualityId
+            | Dto.SubtitlesRef _ -> sprintf "%sTEXT" partSegment
 
         let color =
-            match state with
+            match e.State with
             | Dto.DistributionState.None -> Bulma.IsDark
             | Dto.DistributionState.Requested -> Bulma.IsPrimary
             | Dto.DistributionState.Initiated -> Bulma.IsLink
@@ -126,7 +136,7 @@ let view (state : Model) dispatch =
             | Dto.DistributionState.Rejected -> Bulma.IsDanger
 
         let icon =
-            match state with
+            match e.State with
             | Dto.DistributionState.None -> FA.FaQuestionCircle
             | Dto.DistributionState.Requested -> FA.FaEllipsisH
             | Dto.DistributionState.Initiated -> FA.FaUpload
@@ -147,17 +157,17 @@ let view (state : Model) dispatch =
 
         Html.tr [
             Html.td [prop.className color; prop.children [icon]]
-            Html.td [prop.className color; prop.text (mediaSetId.ToUpper())]
-            Html.td [prop.className color; prop.text (provider.Substring(0,1))]
-            Html.td [prop.className color; prop.text (quality)]
-            Html.td [prop.className color; prop.text (timestamp.ToString(TimeFormatString))]
+            Html.td [prop.className color; prop.text (getShortId e.MediaSetId)]
+            Html.td [prop.className color; prop.text (e.StorageProvider.Substring(0,1))]
+            Html.td [prop.className color; prop.text (getResourceRef e)]
+            Html.td [prop.className color; prop.text (e.Timestamp.ToString(TimeFormatString))]
         ]
 
-    let showEvents () =
+    let showRemoteEvents () =
         Bulma.table [
             prop.children [
                 Html.tbody (
-                    state.Events
+                    state.RemoteEvents
                     |> Seq.map showEvent
                 )
             ]
@@ -166,24 +176,113 @@ let view (state : Model) dispatch =
     let showError () =
         Html.p [prop.text state.Error]
 
+    let getMediaSetBoxColor (mediaSet : RecentMediaSet) =
+        match RecentMediaSet.getAggregatedState mediaSet with
+        | Dto.DistributionState.Requested -> Bulma.HasBackgroundPrimaryLight
+        | Dto.DistributionState.Initiated -> Bulma.HasBackgroundLinkLight
+        | Dto.DistributionState.Ingesting -> Bulma.HasBackgroundInfoLight
+        | Dto.DistributionState.Segmenting -> Bulma.HasBackgroundInfoLight
+        | Dto.DistributionState.Completed -> Bulma.HasBackgroundSuccessLight
+        | Dto.DistributionState.Deleted -> Bulma.HasBackgroundSuccessLight
+        | Dto.DistributionState.Cancelled -> Bulma.HasBackgroundDangerLight
+        | Dto.DistributionState.Failed -> Bulma.HasBackgroundWarningLight
+        | Dto.DistributionState.Rejected -> Bulma.HasBackgroundDangerLight
+        | _ -> Bulma.HasBackgroundPrimaryLight
+
+    let getMediaSetResourceIcon resourceState mediaSet =
+        let icon, color =
+            match resourceState with
+            | Dto.DistributionState.None -> FA.FaMinus, Bulma.HasBackgroundGrey
+            | Dto.DistributionState.Requested -> FA.FaEllipsisH, Bulma.HasBackgroundPrimary
+            | Dto.DistributionState.Initiated -> FA.FaUpload, Bulma.HasBackgroundLink
+            | Dto.DistributionState.Ingesting -> FA.FaCloudUpload, Bulma.HasBackgroundInfo
+            | Dto.DistributionState.Segmenting -> FA.FaCloudUpload, Bulma.HasBackgroundInfo
+            | Dto.DistributionState.Completed -> FA.FaCheckCircle, Bulma.HasBackgroundSuccess
+            | Dto.DistributionState.Deleted -> FA.FaTrash, Bulma.HasBackgroundSuccess
+            | Dto.DistributionState.Cancelled -> FA.FaExclamationCircle, Bulma.HasBackgroundDanger
+            | Dto.DistributionState.Failed -> FA.FaExclamationTriangle, Bulma.HasBackgroundWarning
+            | Dto.DistributionState.Rejected -> FA.FaExclamationCircle, Bulma.HasBackgroundDanger
+        let color = 
+            mediaSet.RemoveCountdown 
+            |> Option.map (fun x -> if x % 2 = 1 then color + "-light" else color) 
+            |> Option.defaultWith (fun () ->
+            match mediaSet.Status with
+            | Dto.MediaSetStatus.Expired | Dto.MediaSetStatus.Rejected -> color + "-dark"
+            | _ -> color)
+        [FA.Fa; icon; color; Bulma.HasTextWhite]
+
+    let showMediaSetResource resourceState mediaSet =
+        Html.i [
+            prop.style [style.padding 5; style.margin(3,3,0,0); style.borderRadius 5; style.width 27]
+            prop.className (getMediaSetResourceIcon resourceState mediaSet)]
+
+    let showPendingMediaSet mediaSet =
+        let defaultTitleClassName = [Bulma.Title; Bulma.Is4]
+        let lighterTitleClassName = [Bulma.Title; Bulma.Is4; Bulma.HasTextGreyLighter]
+        let lightTitleClassName = [Bulma.Title; Bulma.Is4; Bulma.HasTextGreyLight]
+        let titleClassName = 
+            mediaSet.RemoveCountdown 
+            |> Option.map (fun x -> if x % 2 = 1 then lighterTitleClassName else defaultTitleClassName) 
+            |> Option.defaultWith (fun () ->
+            match mediaSet.Status with
+            | Dto.MediaSetStatus.Expired | Dto.MediaSetStatus.Rejected -> lightTitleClassName
+            | _ -> defaultTitleClassName)
+        Bulma.box [
+            prop.className [getMediaSetBoxColor mediaSet]
+            prop.style [style.margin(5,5,5,5)]
+            prop.children [
+                Html.div [
+                    prop.className titleClassName
+                    prop.style [style.margin(0,0,0,0)]
+                    prop.text (getShortId mediaSet.MediaSetId)
+                ]
+                Html.div (mediaSet.AkamaiFiles
+                    |> Map.toList
+                    |> List.map (fun (_,resourceState) -> showMediaSetResource resourceState mediaSet))
+                Html.div (mediaSet.NepFiles
+                    |> Map.toList
+                    |> List.map (fun (_,resourceState) -> showMediaSetResource resourceState mediaSet))
+            ]
+        ]
+
+    let showPendingMediaSets () =
+        state.RecentMediaSets
+        |> Map.toList
+        |> List.map (fun (_, mediaSet) -> showPendingMediaSet mediaSet)
+
     Bulma.column [
         prop.children [
-            Bulma.column [
-                Html.div [
-                    prop.children [
-                        showTitle ()
-                        showEventSets ()
-                        showPlaybackSpeeds ()
-                        showPlayOrPauseButton ()
-                        showStopButton ()
+            Bulma.columns [
+                Bulma.column [
+                    Html.div [
+                        prop.children [
+                            showTitle ()
+                            showEventSets ()
+                            showPlaybackSpeeds ()
+                            showPlayOrPauseButton ()
+                            showStopButton ()
+                        ]
                     ]
                 ]
             ]
-            Bulma.column [
-                Html.div [
+            Bulma.columns [
+                Bulma.column [
+                    column.is3
                     prop.children [
-                        showEvents ()
-                        showError ()
+                        Html.div [
+                            prop.children [
+                                showRemoteEvents ()
+                                showError ()
+                            ]
+                        ]
+                    ]
+                ]
+                Bulma.column [
+                    prop.children [
+                        Bulma.columns [
+                            prop.style [style.flexWrap.wrap; style.marginRight 10]
+                            prop.children (showPendingMediaSets ())
+                        ]
                     ]
                 ]
             ]

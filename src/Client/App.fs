@@ -16,7 +16,7 @@ Program.mkProgram init update view
 |> Program.withBridgeConfig (
     Bridge.endpoint "ws://localhost:8085/socket"     
     |> Bridge.withUrlMode Raw
-    |> Bridge.withMapping (fun (x : Shared.Sockets.ClientMessage) -> x |> Messages.MediaSetEvent))
+    |> Bridge.withMapping (fun (x : Shared.Sockets.ClientMessage) -> x |> Messages.RemoteEvent))
 #if DEBUG
 |> Program.withConsoleTrace
 #endif
