@@ -6,9 +6,12 @@
     </PropertyGroup>
     <ItemGroup>
         <None Include="index.html" />
-        <Compile Include="Index.fs" />
+        <Compile Include="Model.fs" />
+        <Compile Include="Messages.fs" />
+        <Compile Include="Update.fs" />
+        <Compile Include="View.fs" />
         <Compile Include="App.fs" />
-    </ItemGroup>
+    </ItemGroup>    
     <ItemGroup>
         <ProjectReference Include="..\Shared\Shared.fsproj" />
     </ItemGroup>
