@@ -1,14 +1,13 @@
-module Server
+module WebServer
 
 open System.IO
 open Microsoft.AspNetCore.Cors.Infrastructure
 open Giraffe
 open Saturn
+open Elmish.Bridge
 
 open Shared
-
-let getFilesDirectory () =
-    Path.Combine [|Directory.GetCurrentDirectory (); "public"|]
+open SocketServer
 
 let getFiles ctx =
     Directory.EnumerateFiles (getFilesDirectory ())
@@ -32,6 +31,7 @@ let webApp =
     router {
         get Route.hello (json "Hello from SAFE!")
         forward Route.files fileController
+        forward Route.socket socketServer
     }
 
 let configureCors (builder : CorsPolicyBuilder) =
@@ -44,6 +44,7 @@ let configureCors (builder : CorsPolicyBuilder) =
 let app =
     application {
         url "http://0.0.0.0:8085"
+        app_config Giraffe.useWebSockets
         use_router webApp
         memory_cache
         use_static "public"

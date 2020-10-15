@@ -3,7 +3,6 @@ module View
 open Feliz
 open Feliz.Bulma
 
-open System
 open Shared
 open Model
 open Messages
@@ -79,24 +78,23 @@ let view (state : Model) dispatch =
         ]
 
     let showPlayOrPauseButton () =
-        if state.IsPlaying 
+        if not state.IsPlaying || state.IsPaused 
         then Html.button [
-            prop.className [Bulma.Button; Bulma.IsPrimary]
-            prop.onClick (fun _ -> dispatch PausePlayback)
-            prop.children [
-                Html.i [prop.className [FA.Fa; FA.FaPauseCircle] ]
-            ] ]
-        else Html.button [
             prop.className [Bulma.Button; Bulma.IsSuccess]
             prop.onClick (fun _ -> dispatch StartPlayback)
             prop.children [
                 Html.i [prop.className [FA.Fa; FA.FaPlayCircle] ]
             ] ]
+        else Html.button [
+            prop.className [Bulma.Button; Bulma.IsPrimary]
+            prop.onClick (fun _ -> dispatch PausePlayback)
+            prop.children [
+                Html.i [prop.className [FA.Fa; FA.FaPauseCircle] ]
+            ] ]
 
     let showStopButton () =
         Html.button [
             prop.className [Bulma.Button; Bulma.IsDanger]
-            prop.disabled (not state.IsPlaying)
             prop.onClick (fun _ -> dispatch StopPlayback)
             prop.children [
                 Html.i [prop.className [FA.Fa; FA.FaStopCircle] ]
@@ -160,7 +158,6 @@ let view (state : Model) dispatch =
             prop.children [
                 Html.tbody (
                     state.Events
-                    |> Array.truncate (Math.Max (state.EventIndex, 0))
                     |> Seq.map showEvent
                 )
             ]

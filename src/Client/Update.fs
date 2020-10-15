@@ -2,8 +2,7 @@ module Update
 
 open System
 open Elmish
-open Fable.SimpleHttp
-open Thoth.Json
+open Elmish.Bridge
 
 open Shared
 open Model
@@ -13,16 +12,10 @@ let tryParseWith (tryParseFunc: string -> bool * _) = tryParseFunc >> function
         | true, v    -> Some v
         | false, _   -> None
 
-let loadEvents (state : Model) = 
-    async {
-        let filename = match state.EventSet with | EventSet.Small -> "SingleProgram.txt" | EventSet.Large -> "MultiplePrograms.txt"
-        let! response = 
-            Http.request (sprintf "http://localhost:8085%s/%s" Shared.Route.files filename)
-            |> Http.method GET
-            |> Http.send
-        if response.statusCode <> 200 then failwith (sprintf "Error %d" response.statusCode)
-        return response.responseText
-    }
+let getFilename eventSet =
+    match eventSet with 
+    | EventSet.Small -> "SingleProgram.txt" 
+    | EventSet.Large -> "MultiplePrograms.txt"
 
 let delayMessage msg delay state =
     let delayedMsg (dispatch : Msg -> unit) : unit =
@@ -33,45 +26,55 @@ let delayMessage msg delay state =
       Async.StartImmediate delayedDispatch
     state, Cmd.ofSub delayedMsg 
 
-let init () =
-    Model.Empty, Cmd.none
+let initSocket state =
+  try
+    Bridge.Send Sockets.Connect
+    let filename = getFilename state.EventSet
+    Bridge.Send (Sockets.LoadMessages filename)
+    Bridge.Send (Sockets.SetPlaybackDelay state.PlaybackDelay)
+    { state with SocketConnected = true }, Cmd.none
+  with _ ->
+    let delay () = async {
+        do! Async.Sleep 1000
+    }
+    let checkSocket = (fun _ -> ConnectSocket)
+    { state with SocketConnected = false }, Cmd.OfAsync.either delay () checkSocket checkSocket
 
-let selectFileAndSubtitlesEvents activities =
-    activities
-    |> Seq.map (Decode.Auto.fromString<Dto.Activity>)
-    |> Seq.choose (fun x -> match x with Ok (Dto.Activity.MediaSetEvent x) -> Some x | _ -> None)
-    |> Seq.choose (fun x -> match x with | Dto.StatusUpdate _ -> None | _ -> Some x)
+let init () =
+    Model.Empty, Cmd.ofMsg ConnectSocket
 
 let update msg state =
     match msg with
     | EventSetChanged eventSet ->
         let eventSet = if eventSet = EventSet.Small.ToString() then EventSet.Small else EventSet.Large
+        let filename = getFilename eventSet
+        Bridge.Send (Sockets.LoadMessages filename)
         { state with EventSet = eventSet; Error = "" }, Cmd.none 
     | PlaybackDelayChanged delay ->
-        { state with PlaybackDelay = Int32.Parse delay }, Cmd.none
+        let delay = Int32.Parse delay
+        Bridge.Send (Sockets.SetPlaybackDelay delay)
+        { state with PlaybackDelay = delay }, Cmd.none
     | StartPlayback ->
-        let eventIndex = 
-            if state.EventIndex < 0 || state.EventIndex >= state.Events.Length then 0 
-            else state.EventIndex
-        { state with EventIndex = eventIndex; IsPlaying = true }, Cmd.OfAsync.either loadEvents state EventsLoaded EventsError
+        Bridge.Send Sockets.StartPlayback
+        if state.IsPaused then 
+            { state with IsPaused = false }, Cmd.none
+        else 
+            { state with IsPlaying = true; IsPaused = false; Events = [] }, Cmd.none
     | PausePlayback ->
-        { state with IsPlaying = false }, Cmd.none
+        Bridge.Send (Sockets.PausePlayback)
+        { state with IsPaused = true }, Cmd.none
     | StopPlayback ->
-        { state with EventIndex = -1; IsPlaying = false }, Cmd.none
-    | NextEvent ->
-        if state.IsPlaying then
-            if state.EventIndex < state.Events.Length then
-                { state with EventIndex = state.EventIndex + 1 }, Cmd.ofMsg (Delayed (NextEvent, state.PlaybackDelay))
-            else
-                { state with IsPlaying = false }, Cmd.none
-        else
+        Bridge.Send (Sockets.StopPlayback)
+        { state with IsPlaying = false; IsPaused = false }, Cmd.none
+    | MediaSetEvent msg -> 
+        match msg with
+        | Dto.Activity.MediaSetEvent evt -> 
+            match evt with
+            | Dto.RemoteFileUpdate _ | Dto.RemoteSubtitlesUpdate _ ->
+                { state with Events = evt :: state.Events }, Cmd.none
+            | _ ->
+                state, Cmd.none
+        | _ ->
             state, Cmd.none
-    | EventsLoaded events ->
-        let events = 
-            events.Split([|'\r'; '\n'|], StringSplitOptions.RemoveEmptyEntries)
-            |> selectFileAndSubtitlesEvents
-            |> Seq.toArray
-        { state with Events = events }, Cmd.ofMsg (Delayed (NextEvent, state.PlaybackDelay))
-    | EventsError exn ->
-        { state with Error = exn.ToString() }, Cmd.none
+    | ConnectSocket -> initSocket state
     | Delayed (msg, delay) -> delayMessage msg delay state

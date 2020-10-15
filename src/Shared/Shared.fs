@@ -5,6 +5,7 @@ open System
 module Route =
     let hello = "/api/hello"
     let files = "/api/files"
+    let socket = "/socket"
 
 module Dto =
 
@@ -244,3 +245,15 @@ module Dto =
   type Activity =
     | MediaSetState of MediaSetState
     | MediaSetEvent of MediaSetEvent 
+
+module Sockets =
+
+  type ClientCommand =
+      | Connect
+      | LoadMessages of filename:string
+      | SetPlaybackDelay of int
+      | StartPlayback
+      | PausePlayback
+      | StopPlayback
+
+  type ClientMessage = Dto.Activity

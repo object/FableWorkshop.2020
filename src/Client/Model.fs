@@ -11,13 +11,15 @@ type Model =
     { EventSet: EventSet 
       PlaybackDelay : int
       IsPlaying : bool
-      Events : Dto.MediaSetEvent array
-      EventIndex : int
+      IsPaused : bool
+      Events : Dto.MediaSetEvent list
+      SocketConnected : bool
       Error : string }
     static member Empty = 
         { EventSet = EventSet.Small
           PlaybackDelay = 2000
           IsPlaying = false
-          Events = Array.empty
-          EventIndex = -1
+          IsPaused = false
+          Events = List.empty
+          SocketConnected = false
           Error = "" }
