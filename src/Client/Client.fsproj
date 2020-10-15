@@ -19,6 +19,7 @@
         <PackageReference Include="Fable.Elmish.Debugger" Version="3.2.0" />
         <PackageReference Include="Fable.Elmish.Hmr" Version="4.0.1" />
         <PackageReference Include="Fable.React" Version="5.3.6" />
+        <PackageReference Include="Fable.SimpleHttp" Version="3.0.0" />
         <PackageReference Include="Thoth.Fetch" Version="2.0.0" />
     </ItemGroup>
 </Project>

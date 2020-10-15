@@ -1,6 +1,7 @@
 module Server
 
 open System.IO
+open Microsoft.AspNetCore.Cors.Infrastructure
 open Giraffe
 open Saturn
 
@@ -33,6 +34,13 @@ let webApp =
         forward Route.files fileController
     }
 
+let configureCors (builder : CorsPolicyBuilder) =
+    builder
+        .WithOrigins("http://localhost:8080")
+        .AllowAnyMethod()
+        .AllowAnyHeader()
+    |> ignore
+
 let app =
     application {
         url "http://0.0.0.0:8085"
@@ -41,6 +49,7 @@ let app =
         use_static "public"
         use_json_serializer (Thoth.Json.Giraffe.ThothSerializer())
         use_gzip
+        use_cors "CORS_policy" configureCors
     }
 
 run app
