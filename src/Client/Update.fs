@@ -3,7 +3,9 @@ module Update
 open System
 open Elmish
 open Fable.SimpleHttp
+open Thoth.Json
 
+open Shared
 open Model
 open Messages
 
@@ -15,7 +17,7 @@ let loadEvents (state : Model) =
     async {
         let filename = match state.EventSet with | EventSet.Small -> "SingleProgram.txt" | EventSet.Large -> "MultiplePrograms.txt"
         let! response = 
-            Http.request (sprintf "http://localhost:8085/api/files/%s" filename)
+            Http.request (sprintf "http://localhost:8085%s/%s" Shared.Route.files filename)
             |> Http.method GET
             |> Http.send
         if response.statusCode <> 200 then failwith (sprintf "Error %d" response.statusCode)
@@ -29,10 +31,16 @@ let delayMessage msg delay state =
         dispatch msg
       }
       Async.StartImmediate delayedDispatch
-    state, Cmd.ofSub delayedMsg
+    state, Cmd.ofSub delayedMsg 
 
 let init () =
     Model.Empty, Cmd.none
+
+let selectFileAndSubtitlesEvents activities =
+    activities
+    |> Seq.map (Decode.Auto.fromString<Dto.Activity>)
+    |> Seq.choose (fun x -> match x with Ok (Dto.Activity.MediaSetEvent x) -> Some x | _ -> None)
+    |> Seq.choose (fun x -> match x with | Dto.StatusUpdate _ -> None | _ -> Some x)
 
 let update msg state =
     match msg with
@@ -59,7 +67,11 @@ let update msg state =
         else
             state, Cmd.none
     | EventsLoaded events ->
-        { state with Events = events.Split([|'\r'; '\n'|], StringSplitOptions.RemoveEmptyEntries) }, Cmd.ofMsg (Delayed (NextEvent, state.PlaybackDelay))
+        let events = 
+            events.Split([|'\r'; '\n'|], StringSplitOptions.RemoveEmptyEntries)
+            |> selectFileAndSubtitlesEvents
+            |> Seq.toArray
+        { state with Events = events }, Cmd.ofMsg (Delayed (NextEvent, state.PlaybackDelay))
     | EventsError exn ->
         { state with Error = exn.ToString() }, Cmd.none
     | Delayed (msg, delay) -> delayMessage msg delay state

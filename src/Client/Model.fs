@@ -1,5 +1,7 @@
 module Model
 
+open Shared
+
 [<RequireQualifiedAccess>]
 type EventSet =
   | Small
@@ -9,7 +11,7 @@ type Model =
     { EventSet: EventSet 
       PlaybackDelay : int
       IsPlaying : bool
-      Events : string array
+      Events : Dto.MediaSetEvent array
       EventIndex : int
       Error : string }
     static member Empty = 
