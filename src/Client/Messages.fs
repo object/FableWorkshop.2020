@@ -1,7 +1,7 @@
 module Messages
 
 type Msg =
-    | FilenameChanged of string
+    | EventSetChanged of string
     | PlaybackDelayChanged of string
     | StartPlayback
     | PausePlayback

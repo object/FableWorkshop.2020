@@ -1,15 +1,20 @@
 module Model
 
+[<RequireQualifiedAccess>]
+type EventSet =
+  | Small
+  | Large
+
 type Model = 
-    { Filename: string 
+    { EventSet: EventSet 
       PlaybackDelay : int
       IsPlaying : bool
       Events : string array
       EventIndex : int
       Error : string }
     static member Empty = 
-        { Filename = ""
-          PlaybackDelay = 1
+        { EventSet = EventSet.Small
+          PlaybackDelay = 2000
           IsPlaying = false
           Events = Array.empty
           EventIndex = -1
